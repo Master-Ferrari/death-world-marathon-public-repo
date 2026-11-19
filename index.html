@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Death World Marathon</title>
+    <script>
+      // тема как у Quartz: сохранённый выбор на сайте, иначе системная
+      try {
+        const saved = localStorage.getItem("theme")
+        const dark = window.matchMedia("(prefers-color-scheme: dark)").matches
+        document.documentElement.setAttribute("saved-theme", saved ?? (dark ? "dark" : "light"))
+      } catch {}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap"
+    />
+    <style>
+      :root{--light:#faf8f8;--lightgray:#e5e5e5;--gray:#b8b8b8;--darkgray:#4e4e4e;--dark:#2b2b2b;--secondary:#284b63;--tertiary:#84a59d;--highlight:#8f9fa926;--textHighlight:#fff23688;--titleFont:"Schibsted Grotesk",system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";--headerFont:"Schibsted Grotesk",system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";--bodyFont:"Source Sans Pro",system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";--codeFont:"IBM Plex Mono",ui-monospace,SFMono-Regular,SF Mono,Menlo,monospace}
+:root[saved-theme=dark]{--light:#161618;--lightgray:#393639;--gray:#646464;--darkgray:#d4d4d4;--dark:#ebebec;--secondary:#7b97aa;--tertiary:#84a59d;--highlight:#8f9fa926;--textHighlight:#b3aa0288}
+
+      :root {
+        --error: #c9544d;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background: var(--light);
+        color: var(--darkgray);
+        font-family: var(--bodyFont);
+      }
+
+      .island {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: min(320px, 100%);
+        padding: 6px 6px 6px 14px;
+        background: var(--light);
+        border: 1px solid var(--lightgray);
+        border-radius: 7px;
+        transition: border-color 0.15s;
+      }
+      .island:focus-within {
+        border-color: var(--secondary);
+      }
+      .island.error {
+        border-color: var(--error);
+        animation: shake 0.35s;
+      }
+
+      input {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 0;
+        font: inherit;
+        font-size: 1.05rem;
+        color: var(--dark);
+        background: transparent;
+        border: 0;
+        outline: none;
+      }
+
+      button {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        color: var(--light);
+        background: var(--secondary);
+        border: 0;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      button:hover {
+        opacity: 0.85;
+      }
+      button:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+      button svg {
+        width: 18px;
+        height: 18px;
+      }
+      .spinner {
+        display: none;
+        animation: spin 0.8s linear infinite;
+      }
+      .busy .arrow {
+        display: none;
+      }
+      .busy .spinner {
+        display: block;
+      }
+
+      @keyframes shake {
+        20%,
+        60% {
+          transform: translateX(-6px);
+        }
+        40%,
+        80% {
+          transform: translateX(6px);
+        }
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <form class="island" id="login">
+      <input id="password" type="password" autocomplete="current-password" aria-label="Пароль" required autofocus />
+      <button id="submit" type="submit" aria-label="Войти">
+        <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+        <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 3a9 9 0 1 0 9 9" />
+        </svg>
+      </button>
+    </form>
+    <script>
+      // Проверяет пароль расшифровкой index.html, отдаёт ключи Service Worker'у (sw.js)
+      // и перезагружает страницу — дальше сайт расшифровывает sw.js. Значения подставляет encrypt.mjs.
+      const BASE = "/death-world-marathon-public-repo/"
+      const SALT = "death-world-marathon/site/v1"
+      const ITERATIONS = 600000
+
+      const enc = new TextEncoder()
+      const form = document.getElementById("login")
+      const input = document.getElementById("password")
+      const submit = document.getElementById("submit")
+
+      function setBusy(busy) {
+        submit.disabled = busy
+        form.classList.toggle("busy", busy)
+      }
+
+      function fail(err) {
+        if (err) console.error(err)
+        setBusy(false)
+        form.classList.remove("error")
+        void form.offsetWidth // перезапуск анимации
+        form.classList.add("error")
+        input.select()
+      }
+
+      async function deriveKeys(password) {
+        const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"])
+        const bits = await crypto.subtle.deriveBits(
+          { name: "PBKDF2", hash: "SHA-256", salt: enc.encode(SALT), iterations: ITERATIONS },
+          base,
+          512,
+        )
+        const aes = await crypto.subtle.importKey("raw", bits.slice(0, 32), "AES-GCM", false, ["decrypt"])
+        const mac = await crypto.subtle.importKey("raw", bits.slice(32), { name: "HMAC", hash: "SHA-256" }, false, [
+          "sign",
+        ])
+        return { aes, mac }
+      }
+
+      async function fileName(mac, rel) {
+        const sig = new Uint8Array(await crypto.subtle.sign("HMAC", mac, enc.encode(rel)))
+        return Array.from(sig.slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join("")
+      }
+
+      async function checkPassword(keys) {
+        const res = await fetch(BASE + "e/" + (await fileName(keys.mac, "index.html")) + ".bin", { cache: "no-store" })
+        if (!res.ok) return false
+        const buf = await res.arrayBuffer()
+        try {
+          await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: buf.slice(0, 12), additionalData: enc.encode("index.html") },
+            keys.aes,
+            buf.slice(12),
+          )
+          return true
+        } catch {
+          return false
+        }
+      }
+
+      function sendKeys(worker, keys) {
+        return new Promise((resolve, reject) => {
+          const channel = new MessageChannel()
+          channel.port1.onmessage = (e) => (e.data === "ok" ? resolve() : reject(new Error(e.data)))
+          worker.postMessage({ type: "set-keys", ...keys }, [channel.port2])
+        })
+      }
+
+      if (!("serviceWorker" in navigator) || !window.crypto?.subtle) {
+        console.error("Браузер не поддерживает Service Worker / WebCrypto (нужен https или localhost)")
+        input.disabled = true
+        submit.disabled = true
+        form.classList.add("error")
+      }
+
+      input.addEventListener("input", () => form.classList.remove("error"))
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        try {
+          const keys = await deriveKeys(input.value)
+          if (!(await checkPassword(keys))) return fail()
+          await navigator.serviceWorker.register(BASE + "sw.js", { scope: BASE })
+          const registration = await navigator.serviceWorker.ready
+          await sendKeys(registration.active, keys)
+          location.reload()
+        } catch (err) {
+          fail(err)
+        }
+      })
+    </script>
+  </body>
+</html>
